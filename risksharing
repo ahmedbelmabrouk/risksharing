@@ -1,0 +1,142 @@
+#Prototype Bifrost, Ahmed Belmabrouk
+using CPLEX
+using JuMP
+using Random , Distributions
+using Statistics
+using Graphs , GraphRecipes, Plots, GraphPlot , TikzGraphs
+
+"""
+#instance
+
+D=[(250,200),(300,110),(120,100),(80,90),(40,85),(70,75),(60,65),(45,40),(30,38),(35,31),(25,24),(10,16)]
+G=[(120,0),(50,0),(200,15),(400,30),(60,32.5),(50,34),(60,36),(100,37.5),(70,39),(50,40),(70,60),(45,70),(50,100),(60,150),(50,200)]
+ND=length(D)
+NG=length(G)
+PD=[D[i][1] for i in 1:ND]
+λD=[D[i][2] for i in 1:ND]
+PG=[G[j][1] for j in 1:NG]
+λG=[G[j][2] for j in 1:NG]
+model = Model(CPLEX.Optimizer)
+
+    
+
+@variable(model, yD[i=1:ND], Int) # quantité demandée 
+@variable(model, yG[j=1:NG], Int) # quantité générée 
+
+
+@objective(model, Min, sum(λD[i] * yD[i] for i in 1:ND) - sum( λG[j] * yG[j] for j in 1:NG)) #maximiser le bien-etre social
+
+Market_Clearing  = @constraint(model, sum(λD[i] * yD[i] for i in 1:ND) - sum( λG[j] * yG[j] for j in 1:NG)== 0, base_name = "Market_Clearing")
+@constraint(model, [i = 1:ND], 0 <= yD[i] <= PD[i]) 
+@constraint(model, [j = 1:NG], 0 <= yG[j] <= PG[j])
+optimize!(m)
+print("Demandes acceptee: ", value.(yD))
+print("Offres acceptee: ", value.(yG))
+"""
+#instance 
+n=5
+s=100
+A= Array{Int64, 2}(undef, n, n)
+d=Array{Int64, 1}(undef, n)
+#fonction Random Graph qui retourne une matrice d'adjacence symetrique (graphe non orienté) 
+function RandomGraph(n) 
+    while true
+        for i in 1:n 
+            A[i,i]=0 #pas de arete (i,i)
+            for j in 1:i-1
+                  A[i,j] = A[j,i]= rand(Bool)   #Matrice A d'adjacence
+            end
+        end
+        if (sum((sum(A[i,j] for j in 1:n) > 0) for i in 1:n) > n-1) #pas de sommet isolé
+            break 
+        end
+    end       
+    return(A)
+end
+function ErdosRenyiGraph(n,p) 
+    while true
+        for i in 1:n 
+            A[i,i]=0 #pas de arete (i,i)
+            for j in 1:i-1
+                  A[i,j] = A[j,i]= rand(Bernoulli(p))   #Matrice A d'adjacence
+            end
+        end
+        if (sum((sum(A[i,j] for j in 1:n) > 0) for i in 1:n) > n-1) #pas de sommet isolé
+            break  
+        end
+    end       
+    return(A)
+end
+
+A=RandomGraph(n)
+println(A)
+V=Array{Array, 1}(undef, n)
+d=Z=Y=X=C=S=Array{Int, 1}(undef, n)
+p=0.3
+
+function RiskSharing(n,A,s,p1)
+    d_moy = sum(A) / n
+    γ =s/d_moy
+    for i in 1:n
+        d[i]=sum(A[i,j] for j in 1:n)
+        Vi=[]
+        for j in 1:n
+            if A[i,j]==1
+                Vi.append(j)
+            end
+        end
+        V[i]=Vi
+        Z[i]=rand(Bernoulli(p)) 
+        Y[i]=rand(Uniform(0,200))
+        X[i]=Z[i]* min(s,Y[i])
+        C[i]=min(γ,X[i]/d[i])
+    end
+    for i in 1:n
+        S[i]=0
+        for j in V[i]
+            S[i]=S[i]+Z[j]*C[j]
+        end 
+        ξ[i]=X[i]+S[i]- Z[i] * d[i] * C[i]
+        C[i]=min(γ,X[i]/d[i])
+    end
+return(ξ)
+end
+n=4
+A=[[0 1 1 1],[1 0 1 0],[1 1 0 0],[1 0 0 0]]
+s=100
+γ_sup=50
+E=[]
+for i in 1:n 
+    for j in 1:i
+        if A[i][j]==1
+            push!(E,[i,j])
+        end
+    end
+end
+println([2,1] in E)
+println(E)
+function RiskSharing2(n,A,s,γ_sup,E)
+    #CPLEX Model
+    m1 = Model(CPLEX.Optimizer)
+    
+    @variable(m1, γ[i in 1:n ,j in 1:n] , Int) 
+    """
+    E=[]
+    for i in 1:n 
+        for j in 1:i
+            if A[i][j]==1
+                push!(E,[i,j])
+            end
+        end
+    end
+    """
+    @constraint(m1,[i in 1:n , j in 1:n, [i,j] in E ], 0 <= γ[i,j] <= γ_sup)
+    @constraint(m1,[i in 1:n ], sum(γ[i,j] for j in 1:n if [i,j] in E) <= s)
+    @objective(m1, Max, sum(γ[i,j]  for i in 1:n , j in 1:n if [i,j] in E ))
+    optimize!(m1)
+    z=objective_value(m1)
+    γ_val=value.(γ)
+    return(γ_val)
+end
+γ_val=RiskSharing2(n,A,s,γ_sup,E)
+println(γ_val)
