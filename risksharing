@@ -1,6 +1,6 @@
 #Prototype Bifrost, Ahmed Belmabrouk
-using CPLEX
 using JuMP
+using CPLEX
 using Random , Distributions
 using Statistics
 using Graphs , GraphRecipes, Plots, GraphPlot , TikzGraphs
@@ -115,28 +115,26 @@ for i in 1:n
 end
 println([2,1] in E)
 println(E)
-function RiskSharing2(n,A,s,γ_sup,E)
+
+println(A)
+println(s)
+function RiskSharing2(n,s,γ_sup, E)
     #CPLEX Model
     m1 = Model(CPLEX.Optimizer)
+    @variable(m1, γ[i in 1:n ,j in 1:n] >=0 , Int) 
+    @constraint(m1,[i in 1:n ], sum(γ[i,j] for j in 1:n ) == s)
+    @constraint(m1,[i in 1:n , j in 1:n  ],  γ[i,j]==γ[j,i]) #contrainte de reciprocité
+    @constraint(m1,[i in 1:n , j in 1:n ; ([i,j] in E ) ],  0 <= γ[i,j] <= γ_sup) 
+    @constraint(m1,γ[4,4]==60)
+    @objective(m1, Max, sum(γ[i,j] for i in 1:n , j in 1:n  if( [i,j] in E )))
     
-    @variable(m1, γ[i in 1:n ,j in 1:n] , Int) 
-    """
-    E=[]
-    for i in 1:n 
-        for j in 1:i
-            if A[i][j]==1
-                push!(E,[i,j])
-            end
-        end
-    end
-    """
-    @constraint(m1,[i in 1:n , j in 1:n, [i,j] in E ], 0 <= γ[i,j] <= γ_sup)
-    @constraint(m1,[i in 1:n ], sum(γ[i,j] for j in 1:n if [i,j] in E) <= s)
-    @objective(m1, Max, sum(γ[i,j]  for i in 1:n , j in 1:n if [i,j] in E ))
     optimize!(m1)
     z=objective_value(m1)
     γ_val=value.(γ)
     return(γ_val)
+    
 end
-γ_val=RiskSharing2(n,A,s,γ_sup,E)
+γ_val=RiskSharing2(n,s,γ_sup,E)
+MOI.get(m1, MOI.ResultCount())
+
 println(γ_val)
